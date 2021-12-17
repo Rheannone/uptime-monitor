@@ -16,6 +16,7 @@ const github_1 = require("./helpers/github");
 const init_check_1 = require("./helpers/init-check");
 const notifme_1 = require("./helpers/notifme");
 const ping_1 = require("./helpers/ping");
+const ping_2 = require("./helpers/ping");
 const request_1 = require("./helpers/request");
 const secrets_1 = require("./helpers/secrets");
 const summary_1 = require("./summary");
@@ -98,7 +99,8 @@ const update = async (shouldCommit = false) => {
          * Check whether the site is online
          */
         const performTestOnce = async () => {
-            if (site.check === "tcp-ping") {
+            // if they are similar enough, possibly just build out this check to include websockets\
+            if (site.check === "tcp-ping" || site.check === "wss") {
                 console.log("Using tcp-ping instead of curl");
                 try {
                     let status = "up";
@@ -109,7 +111,6 @@ const update = async (shouldCommit = false) => {
                     });
                     if (tcpResult.results.every(result => Object.prototype.toString.call(result.err) === "[object Error]"))
                         throw Error('all attempts failed');
-                    console.log("Got result", tcpResult);
                     let responseTime = (tcpResult.avg || 0).toFixed(0);
                     if (parseInt(responseTime) > (site.maxResponseTime || 60000))
                         status = "degraded";
@@ -122,6 +123,32 @@ const update = async (shouldCommit = false) => {
                 catch (error) {
                     console.log("ERROR Got pinging error", error);
                     return { result: { httpCode: 0 }, responseTime: (0).toFixed(0), status: "down" };
+                }
+            } else if (site.check === "wss"){
+                console.log("using websockets instead of curl")
+                // maybe make this ping_2? or ping_x etc
+                // build result object with same address and attemps as tcp-ip, dont think we need port 
+                try {
+                    const wssResult = await ping_2.ping({
+                        address: environment_1.replaceEnvironmentVariables(site.url),
+                        attempts: 5
+                    });
+                // same fail check as above
+                if (wssResult.results.every(result => Object.prototype.toString.call(result.err) === "[object Error]")) {
+                    throw Error('all wss attempts failed')
+                } 
+                // shorter acceptible response time. 
+                // websockets has a wss.bufferedData method, maybe could also check if that is 0
+                let responseTime = (wssResult.avg || 0).toFixed(0);
+                    if (parseInt(responseTime) > (site.maxResponseTime || 30000))
+                        status = "degraded";
+                    return {
+                        result: { httpCode: 200 },
+                        responseTime,
+                        status,
+                    };
+                } catch(e) {
+                    console.log(e, "wss check error")
                 }
             }
             else {
